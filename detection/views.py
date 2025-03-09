@@ -21,6 +21,9 @@ from langchain.memory import ConversationBufferMemory
 from langchain.memory.chat_message_histories import RedisChatMessageHistory
 from langchain_core.memory import BaseMemory
 from typing import Dict, Any, List
+from datetime import datetime
+from django.core.exceptions import ValidationError
+import traceback
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -235,20 +238,30 @@ def chat_view(request):
     })
 
 def extract_json_from_text(text):
-    """Extract JSON content from text by finding outermost { and }"""
+    """Extract JSON content from text more robustly"""
     try:
         # Convert AIMessage to string if needed
         if hasattr(text, 'content'):
             text = text.content
+            
+        # First try to find JSON between triple backticks
+        import re
+        json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(1))
+            
+        # Then try to find between curly braces
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if (json_match):
+            return json.loads(json_match.group(0))
+            
+        # If still not found, try to parse the whole text
+        return json.loads(text)
         
-        start_idx = text.find('{')
-        end_idx = text.rindex('}')
-        if (start_idx != -1 and end_idx != -1):
-            json_str = text[start_idx:end_idx + 1]
-            return json.loads(json_str)
     except Exception as e:
-        logger.error(f"JSON extraction error: {e}")
-    return None
+        logger.error(f"JSON extraction error: {str(e)}")
+        logger.debug(f"Failed text: {text}")
+        return None
 
 def analyze_image(image_path):
     try:
@@ -557,12 +570,17 @@ class CustomConversationMemory(BaseMemory):
         self._messages = []
 
 def save_conversation(session_id: str, role: str, message: str):
-    """Save conversation to file"""
-    filepath = f"conversations/{session_id}.txt"
-    os.makedirs("conversations", exist_ok=True)
-    
-    with open(filepath, "a") as f:
-        f.write(f"{role}: {message}\n")
+    """Save conversation to file with error handling"""
+    try:
+        filepath = f"conversations/{session_id}.txt"
+        os.makedirs("conversations", exist_ok=True)
+        
+        with open(filepath, "a") as f:
+            f.write(f"{role}: {message}\n")
+            
+    except Exception as e:
+        logger.error(f"Error saving conversation: {str(e)}")
+        # Continue execution even if save fails
 
 def get_llm_response(context=None, session_id=None):
     """Get next question based on conversation context with strict topic tracking"""
@@ -927,86 +945,105 @@ def risk_assessment(request):
             data = json.loads(request.body)
             session_id = request.session.session_key or 'default'
             
-            # Get or initialize the context from session
+            # Initialize session if needed
+            if 'risk_context' not in request.session:
+                request.session['risk_context'] = {}
+            if 'question_index' not in request.session:
+                request.session['question_index'] = -1  # Start at -1
+                
             context = request.session.get('risk_context', {})
-            question_index = request.session.get('question_index', 0)
+            question_index = request.session.get('question_index', -1)
 
+            # Handle start of assessment
             if data.get('start'):
-                # Clear previous context
                 context = {}
                 question_index = 0
                 request.session['risk_context'] = context
                 request.session['question_index'] = question_index
-                
-                # Return the first question
                 return JsonResponse(RISK_ASSESSMENT_QUESTIONS[0])
 
+            # Handle question responses
             if 'field' in data and 'answer' in data:
                 field = data['field']
                 answer = data['answer']
                 
-                # Save to context
+                # Save answer
                 context[field] = answer
+                request.session['risk_context'] = context
                 
-                # Save answer to conversation file
+                # Save to conversation history
                 save_conversation(session_id, "User", f"{field}: {answer}")
                 
                 # Move to next question
                 question_index += 1
-                request.session['risk_context'] = context
                 request.session['question_index'] = question_index
                 
                 # Check if assessment is complete
                 if question_index >= len(RISK_ASSESSMENT_QUESTIONS):
-                    # All questions answered - analyze responses
-                    analysis = analyze_conversation(session_id, context)
-                    
-                    if analysis:
+                    try:
+                        analysis = analyze_conversation(session_id, context)
+                        if not analysis:
+                            raise ValueError("Analysis failed to return results")
+                            
                         assessment = RiskAssessment.objects.create(
                             name=context.get('name', 'Anonymous'),
                             conversation_history=json.dumps(analysis),
-                            risk_level=analysis['risk_level'],
-                            risk_score=float(analysis['risk_score']),
-                            key_factors='\n'.join(analysis['key_factors']),
-                            recommendations='\n'.join(analysis['recommendations']),
-                            summary=analysis['summary']
+                            risk_level=analysis.get('risk_level', 'MODERATE'),
+                            risk_score=float(analysis.get('risk_score', 0.5)),
+                            key_factors='\n'.join(analysis.get('key_factors', [])),
+                            recommendations='\n'.join(analysis.get('recommendations', [])),
+                            summary=analysis.get('summary', 'Analysis completed')
                         )
                         
-                        # Clear session context
+                        # Clear session
                         request.session['risk_context'] = {}
-                        request.session['question_index'] = 0
+                        request.session['question_index'] = -1
                         
                         return JsonResponse({
                             'completed': True,
                             'redirect_url': reverse('risk_result', kwargs={'pk': assessment.pk})
                         })
+                    except Exception as e:
+                        logger.error(f"Error creating assessment: {str(e)}")
+                        raise
                 
-                # Return next question
-                next_question = RISK_ASSESSMENT_QUESTIONS[question_index]
-                
-                # For questions that depend on previous answers
-                if next_question['field'] == 'family_history_details' and context.get('family_history') == 'No':
-                    # Skip family history details if no family history
-                    question_index += 1
-                    request.session['question_index'] = question_index
+                try:
+                    # Get next question
                     next_question = RISK_ASSESSMENT_QUESTIONS[question_index]
-                
-                # Save the question to conversation file
-                save_conversation(session_id, "Assistant", next_question['message'])
-                
-                # Update name in the message if we have it
-                if 'name' in context and '{name}' in next_question.get('message', ''):
-                    next_question['message'] = next_question['message'].format(name=context['name'])
-                
-                return JsonResponse(next_question)
+                    
+                    # Handle conditional questions
+                    if next_question['field'] == 'family_history_details':
+                        if context.get('family_history', '').lower() == 'no':
+                            question_index += 1
+                            request.session['question_index'] = question_index
+                            next_question = RISK_ASSESSMENT_QUESTIONS[question_index]
+                    
+                    # Format question with name if available
+                    if 'name' in context and '{name}' in next_question.get('message', ''):
+                        next_question['message'] = next_question['message'].format(
+                            name=context['name']
+                        )
+                    
+                    # Save question to history
+                    save_conversation(session_id, "Assistant", next_question['message'])
+                    
+                    return JsonResponse(next_question)
+                    
+                except IndexError:
+                    logger.error(f"Question index out of range: {question_index}")
+                    return JsonResponse({
+                        'error': 'Assessment structure error',
+                        'message': 'Unable to load next question'
+                    }, status=500)
 
         except Exception as e:
-            logger.error(f"Error in risk assessment: {e}")
+            logger.error(f"Risk assessment error: {str(e)}")
             return JsonResponse({
                 'error': str(e),
-                'message': 'An error occurred. Please try again.'
+                'message': 'An error occurred processing your response'
             }, status=500)
 
+    # GET request - render initial page
     return render(request, 'detection/risk_assessment.html')
 
 def risk_result(request, pk):
