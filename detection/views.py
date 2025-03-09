@@ -2,12 +2,19 @@ from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from .models import Report
 from .forms import ReportForm
-from langchain_community.llms import Ollama
+from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage
+from langchain_core.output_parsers import StrOutputParser
 import base64
 import json
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Configure Ollama
-llm = Ollama(
+llm = ChatOllama(
     model="llama3.2-vision",
     base_url="https://9gwg2slc-11434.inc1.devtunnels.ms/",
     temperature=0.1
@@ -40,73 +47,115 @@ def chat_view(request):
         return JsonResponse({'response': response})
     return render(request, 'detection/chat.html')
 
+def extract_json_from_text(text):
+    """Extract JSON content from text by finding outermost { and }"""
+    try:
+        # Convert AIMessage to string if needed
+        if hasattr(text, 'content'):
+            text = text.content
+            
+        start_idx = text.find('{')
+        end_idx = text.rindex('}')
+        if start_idx != -1 and end_idx != -1:
+            json_str = text[start_idx:end_idx + 1]
+            return json.loads(json_str)
+    except Exception as e:
+        logger.error(f"JSON extraction error: {e}")
+    return None
+
 def analyze_image(image_path):
     try:
         # Read and encode image
         with open(image_path, 'rb') as img:
             image_data = base64.b64encode(img.read()).decode('utf-8')
         
-        # Create analysis prompt with proper JSON structure
-        system_prompt = """You are a medical AI assistant specialized in analyzing mammograms.
-        Analyze the provided image and give a structured response about potential breast cancer indicators."""
-        
-        user_prompt = """Please analyze this mammogram and provide:
-        1. A percentage indicating the probability of cancer (0-100)
-        2. Key findings from the image
-        3. Medical guidance for the patient
-        
-        Format the response as a structured analysis."""
-
-        # Combine prompts with image
-        messages = [
-            {"role": "system", "content": system_prompt},
+        # Step 1: Simple text extraction
+        text_extraction_parts = [
             {
-                "role": "user",
-                "content": user_prompt,
-                "images": [f"data:image/jpeg;base64,{image_data}"]
+                "type": "image_url",
+                "image_url": f"data:image/jpeg;base64,{image_data}"
+            },
+            {
+                "type": "text",
+                "text": "Extract all text from this image."
             }
         ]
         
-        # Get response from model
-        response = llm.invoke(json.dumps(messages))
+        message = HumanMessage(content=text_extraction_parts)
+        raw_text = llm.invoke([message])
+        logger.debug(f"Raw extracted text: {raw_text}")
         
-        # Extract information from response
-        try:
-            # Attempt to parse probability from response
-            prob = extract_probability(response) 
-            
-            return {
-                'probability': prob,
-                'findings': response,
-                'guidance': 'Please consult a healthcare professional for proper diagnosis. This AI analysis is for informational purposes only.'
+        # Step 2: Analysis with JSON output request
+        analysis_parts = [
+            {
+                "type": "text",
+                "text": f"""Based on this medical report text:
+                {raw_text.content}
+                
+                Analyze the severity and provide a response in this exact JSON format, where:
+                - probability should be a number between 0-100 indicating cancer likelihood
+                - findings should list all key medical observations
+                - recommendations should list suggested actions
+
+                Return ONLY the JSON:
+                {{
+                    "probability": "85",
+                    "findings": [
+                        "finding 1",
+                        "finding 2"
+                    ],
+                    "recommendations": [
+                        "recommendation 1",
+                        "recommendation 2"
+                    ]
+                }}"""
             }
-        except Exception as parsing_error:
-            print(f"Error parsing response: {parsing_error}")
+        ]
+        
+        message = HumanMessage(content=analysis_parts)
+        analysis = llm.invoke([message])
+        logger.debug(f"Analysis response: {analysis}")
+        
+        # Extract JSON from response
+        json_data = extract_json_from_text(analysis)
+        
+        if json_data:
+            probability = json_data.get('probability')
+            # Handle null probability
+            if probability is None:
+                probability = "50"  # Default value if null
+                
             return {
-                'probability': 0.5,  # Default probability
-                'findings': str(response),
-                'guidance': 'Error processing results. Please consult a healthcare professional.'
+                'probability': int(probability) / 100,
+                'findings': '\n'.join(json_data.get('findings', [])),
+                'guidance': '\n'.join(json_data.get('recommendations', []))
             }
+        else:
+            logger.error("Failed to extract JSON from response")
+            raise ValueError("Could not extract JSON from response")
             
     except Exception as e:
-        print(f"Error in analyze_image: {str(e)}")
+        logger.error(f"Error in analyze_image: {str(e)}")
         return {
-            'probability': 0,
+            'probability': 0.5,  # Default probability
             'findings': f"Error analyzing image: {str(e)}",
-            'guidance': 'Technical error occurred. Please try again or consult a medical professional.'
+            'guidance': 'Technical error occurred. Please try again.'
         }
 
 def get_chatbot_response(question):
     try:
-        prompt = f"""
-        You are a breast cancer awareness chatbot. 
-        Only answer questions related to breast cancer.
+        message = HumanMessage(content=[{
+            "type": "text",
+            "text": f"""You are a breast cancer awareness chatbot.
+            Only answer questions related to breast cancer.
+            
+            Question: {question}"""
+        }])
         
-        Question: {question}
-        """
-        response = llm.invoke(prompt)
-        return response
+        response = llm.invoke([message])
+        return output_parser.invoke(response)
     except Exception as e:
+        logger.error(f"Chat error: {str(e)}")
         return f"Error: {str(e)}"
 
 def extract_probability(text):
