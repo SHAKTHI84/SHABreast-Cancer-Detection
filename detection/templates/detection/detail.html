@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Report Analysis</h2>
+    <img src="{{ report.image.url }}" class="img-fluid mb-3" alt="Medical Report">
+    <div class="card">
+        <div class="card-body">
+            <h5>Probability: {{ report.probability }}%</h5>
+            <h6>Findings:</h6>
+            <p>{{ report.findings }}</p>
+            <h6>Guidance:</h6>
+            <p>{{ report.guidance }}</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
