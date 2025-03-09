@@ -42,9 +42,46 @@ def report_detail(request, pk):
 
 def chat_view(request):
     if request.method == 'POST':
-        question = request.POST.get('question')
-        response = get_chatbot_response(question)
-        return JsonResponse({'response': response})
+        try:
+            data = json.loads(request.body)
+            question = data.get('question')
+            context = data.get('context', {})
+            
+            # Create system message with context
+            system_message = HumanMessage(content=[{
+                "type": "text",
+                "text": f"""You are a medical AI assistant discussing a breast cancer report with the following findings:
+                Probability: {context.get('probability')}%
+                Findings: {context.get('findings')}
+                Guidance: {context.get('guidance')}
+                
+                Use this context to provide relevant answers about the patient's specific case.
+                If asked about other topics, provide general breast cancer information."""
+            }])
+            
+            # Create user question message
+            user_message = HumanMessage(content=[{
+                "type": "text",
+                "text": question
+            }])
+            
+            # Get response from LLM
+            response = llm.invoke([system_message, user_message])
+            
+            return JsonResponse({
+                'response': response.content if hasattr(response, 'content') else str(response)
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'response': 'Invalid request format'
+            }, status=400)
+        except Exception as e:
+            logger.error(f"Chat error: {str(e)}")
+            return JsonResponse({
+                'response': 'An error occurred while processing your request'
+            }, status=500)
+            
     return render(request, 'detection/chat.html')
 
 def extract_json_from_text(text):
