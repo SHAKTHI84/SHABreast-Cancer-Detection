@@ -144,19 +144,36 @@ def analyze_image(image_path):
 
 def get_chatbot_response(question):
     try:
-        message = HumanMessage(content=[{
+        # Create system message for context
+        system_message = HumanMessage(content=[{
             "type": "text",
-            "text": f"""You are a breast cancer awareness chatbot.
-            Only answer questions related to breast cancer.
-            
-            Question: {question}"""
+            "text": """You are a specialized breast cancer awareness chatbot.
+            Only provide accurate, medical information about breast cancer topics including:
+            - Early detection and screening
+            - Signs and symptoms
+            - Risk factors and prevention
+            - Treatment options
+            - Support resources
+            Keep responses concise and factual."""
         }])
         
-        response = llm.invoke([message])
-        return output_parser.invoke(response)
+        # Create user question message
+        user_message = HumanMessage(content=[{
+            "type": "text",
+            "text": question
+        }])
+        
+        # Get response from LLM
+        response = llm.invoke([system_message, user_message])
+        
+        # Extract content from AIMessage
+        if hasattr(response, 'content'):
+            return response.content
+        return str(response)
+        
     except Exception as e:
         logger.error(f"Chat error: {str(e)}")
-        return f"Error: {str(e)}"
+        return "I apologize, but I encountered an error. Please try asking your question again."
 
 def extract_probability(text):
     """Extract probability from model response text"""
