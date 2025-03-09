@@ -143,57 +143,48 @@ def chat_view(request):
             question = data.get('question')
             session_id = request.session.session_key or 'default'
             
-            # Get image analysis history from session
-            image_analyses = request.session.get('image_analyses', [])
-            last_image_id = request.session.get('last_image_id')
+            # Ensure conversations directory exists
+            conversation_dir = os.path.join(settings.BASE_DIR, 'conversations')
+            os.makedirs(conversation_dir, exist_ok=True)
             
-            # Load conversation history
-            conversation_history = []
-            conversation_file = f"conversations/{session_id}.txt"
-            if os.path.exists(conversation_file):
-                with open(conversation_file, 'r') as f:
-                    conversation_history = f.readlines()
+            # Load ALL conversation files
+            all_conversations = []
+            for filename in os.listdir(conversation_dir):
+                if filename.endswith('.txt'):
+                    with open(os.path.join(conversation_dir, filename), 'r') as f:
+                        file_content = f.readlines()
+                        # Add source identifier to each line
+                        conversation_id = filename.replace('.txt', '')
+                        all_conversations.extend([
+                            f"{line.strip()}" for line in file_content
+                        ])
+
+            # Get recent conversation history (last 10 exchanges)
+            recent_conversations = all_conversations[-10:] if all_conversations else []
             
-            # Load knowledge base documents
+            # Get knowledge base context
             documents = load_knowledge_base()
-            
-            # Get relevant context
             relevant_docs = get_relevant_context(question, documents)
             
-            # Format context for the model
-            knowledge_context = "\n\n".join([
-                f"From {doc['source']} (Page {doc['page']}):\n{doc['content']}" 
-                for doc in relevant_docs
-            ])
+            # Format context with ALL conversation history
+            context = f"""Previous conversations:
+            {chr(10).join(recent_conversations)}
             
-            # Format image analysis context
-            image_context = ""
-            if image_analyses:
-                image_context = "Previous image analyses:\n" + "\n\n".join([
-                    f"Image {i+1} (ID: {analysis['image_id']}):\n" +
-                    f"- Findings: {analysis['findings']}\n" +
-                    f"- Risk probability: {float(analysis['probability']) * 100:.1f}%\n" +
-                    f"- Guidance: {analysis['guidance']}"
-                    for i, analysis in enumerate(image_analyses)
-                ])
+            Current question: {question}
             
-            # Create system message with all context
+            Guidelines:
+            - Use the conversation history to maintain context
+            - Reference previous discussions when relevant
+            - Cite sources when providing medical information
+            - Use markdown formatting for clear presentation
+            - Be compassionate and clear in explanations
+            - If contradicting previous statements, explain why
+            """
+            
+            # Create system message
             system_message = HumanMessage(content=[{
                 "type": "text",
-                "text": f"""You are a medical AI assistant specializing in breast cancer.
-                
-                Previous conversation:
-                {' '.join(conversation_history[-10:] if len(conversation_history) > 10 else conversation_history)}
-                
-                {image_context}
-                
-                Reference Knowledge:
-                {knowledge_context}
-                
-                Provide accurate information based on the conversation history, image analyses, and references.
-                If the user is asking about previously analyzed images, refer to the specific findings and guidance.
-                Use markdown formatting in your response.
-                For general questions, provide factual medical information."""
+                "text": context
             }])
             
             # Create user question message
@@ -202,42 +193,46 @@ def chat_view(request):
                 "text": question
             }])
             
-            # Save user question to conversation history
-            save_conversation(session_id, "User", question)
-            
             # Get response from LLM
             response = llm.invoke([system_message, user_message])
             response_text = response.content if hasattr(response, 'content') else str(response)
             
-            # Save AI response to conversation history
-            save_conversation(session_id, "Assistant", response_text)
+            # Save to current session's conversation file
+            current_file = os.path.join(conversation_dir, f'{session_id}.txt')
+            with open(current_file, 'a') as f:
+                f.write(f"User: {question}\n")
+                f.write(f"Assistant: {response_text}\n")
             
-            # Determine which image is being referenced if any
-            referenced_image = None
-            if last_image_id and any(term in question.lower() for term in ['image', 'scan', 'mammogram', 'report', 'result', 'analysis', 'findings']):
-                referenced_image = last_image_id
+            # Format response with sources
+            if relevant_docs:
+                response_text += "\n\n**Sources:**"
+                for doc in relevant_docs:
+                    response_text += f"\n- {doc['source']} (Page {doc['page']})"
             
             return JsonResponse({
                 'response': response_text,
-                'references': [
-                    {
-                        'source': doc['source'],
-                        'page': doc['page'],
-                        'url': f"/media/knowledge/{doc['source']}"
-                    } 
-                    for doc in relevant_docs
-                ],
-                'referencedImage': referenced_image
+                'references': relevant_docs
             })
             
         except Exception as e:
             logger.error(f"Chat error: {str(e)}")
             return JsonResponse({
-                'response': 'An error occurred while processing your request',
-                'references': []
+                'response': 'An error occurred while processing your request'
             }, status=500)
-            
-    return render(request, 'detection/chat.html')
+    
+    # For GET requests, load ALL conversation history
+    conversation_history = []
+    conversation_dir = os.path.join(settings.BASE_DIR, 'conversations')
+    
+    if os.path.exists(conversation_dir):
+        for filename in os.listdir(conversation_dir):
+            if filename.endswith('.txt'):
+                with open(os.path.join(conversation_dir, filename), 'r') as f:
+                    conversation_history.extend(f.readlines())
+    
+    return render(request, 'detection/chat.html', {
+        'conversation_history': conversation_history
+    })
 
 def extract_json_from_text(text):
     """Extract JSON content from text by finding outermost { and }"""
@@ -1211,5 +1206,26 @@ def analyze_image_chat(request):
             return JsonResponse({
                 'response': 'An error occurred while processing your request'
             }, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+def clear_chat(request):
+    """Clear chat history for current session"""
+    if request.method == 'POST':
+        session_id = request.session.session_key or 'default'
+        
+        # Clear session memory
+        request.session['chat_memory'] = []
+        
+        # Optionally archive conversation file instead of deleting
+        conversation_file = f"conversations/{session_id}.txt"
+        if os.path.exists(conversation_file):
+            archive_dir = "conversations/archived"
+            os.makedirs(archive_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archived_file = f"{archive_dir}/{session_id}_{timestamp}.txt"
+            os.rename(conversation_file, archived_file)
+        
+        return JsonResponse({'status': 'success'})
     
     return JsonResponse({'error': 'Method not allowed'}, status=405)

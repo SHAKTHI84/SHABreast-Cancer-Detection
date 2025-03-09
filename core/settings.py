@@ -140,3 +140,7 @@ for file in os.listdir(KNOWLEDGE_SOURCE):
         src = os.path.join(KNOWLEDGE_SOURCE, file)
         dst = os.path.join(KNOWLEDGE_MEDIA_PATH, file)
         shutil.copy2(src, dst)
+
+# Conversation storage
+CONVERSATION_DIR = os.path.join(BASE_DIR, 'conversations')
+os.makedirs(CONVERSATION_DIR, exist_ok=True)
