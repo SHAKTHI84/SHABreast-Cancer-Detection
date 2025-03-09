@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+import shutil
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -124,7 +126,17 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Add these settings at the bottom of the file
-import os
-
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Create a symbolic link for knowledge files
+KNOWLEDGE_MEDIA_PATH = os.path.join(MEDIA_ROOT, 'knowledge')
+os.makedirs(KNOWLEDGE_MEDIA_PATH, exist_ok=True)
+
+# Copy knowledge files to media directory for serving
+KNOWLEDGE_SOURCE = os.path.join(BASE_DIR, 'knowledge')
+for file in os.listdir(KNOWLEDGE_SOURCE):
+    if file.endswith(('.pdf', '.txt')):
+        src = os.path.join(KNOWLEDGE_SOURCE, file)
+        dst = os.path.join(KNOWLEDGE_MEDIA_PATH, file)
+        shutil.copy2(src, dst)

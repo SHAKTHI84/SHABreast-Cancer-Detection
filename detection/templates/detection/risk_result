@@ -1,0 +1,69 @@
+.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3>Risk Assessment Results</h3>
+                </div>
+                <div class="card-body">
+                    <!-- Risk Score Display -->
+                    <div class="text-center mb-4">
+                        <div class="risk-meter">
+                            <div class="progress" style="height: 30px;">
+                                <div class="progress-bar 
+                                    {% if context.risk_percentage < 30 %}bg-success
+                                    {% elif context.risk_percentage < 60 %}bg-warning
+                                    {% else %}bg-danger{% endif %}"
+                                    role="progressbar" 
+                                    style="width: {{ context.risk_percentage }}%">
+                                    {{ context.risk_percentage }}%
+                                </div>
+                            </div>
+                        </div>
+                        <p class="mt-2 text-muted">Risk Level Assessment</p>
+                    </div>
+
+                    <!-- Recommendations -->
+                    <div class="recommendations mt-4">
+                        <h4>Recommendations</h4>
+                        <ul class="list-group">
+                            {% for recommendation in context.recommendations %}
+                            <li class="list-group-item">{{ recommendation }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+
+                    <!-- Next Steps -->
+                    <div class="mt-4">
+                        <h4>Next Steps</h4>
+                        <p>Based on your risk assessment, we recommend discussing these results with your healthcare provider.
+                           They can help create a personalized screening and prevention plan.</p>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="mt-4 text-center">
+                        <a href="{% url 'risk_assessment' %}" class="btn btn-secondary">Take Another Assessment</a>
+                        <a href="{% url 'upload_report' %}" class="btn btn-primary">Upload Mammogram</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.risk-meter {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.progress-bar {
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+</style>
+{% endblock %}

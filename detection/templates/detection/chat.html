@@ -4,23 +4,19 @@
 <div class="container mt-5">
     <div class="card">
         <div class="card-header bg-primary text-white">
-            <h2 class="mb-0">Breast Cancer Awareness Chat</h2>
+            <h3>Medical Assistant</h3>
         </div>
         <div class="card-body">
-            <div id="chat-messages" class="mb-3" style="height: 400px; overflow-y: auto; padding: 15px;">
-                <div class="text-center text-muted mb-3">
-                    <small>Ask questions about breast cancer awareness, symptoms, or treatments</small>
-                </div>
+            <div id="chat-messages" class="mb-3" style="height: 500px; overflow-y: auto;">
             </div>
             <div class="input-group">
                 <input type="text" id="question" class="form-control" 
-                       placeholder="Type your question and press Enter..."
+                       placeholder="Ask about breast cancer..."
                        onkeypress="handleKeyPress(event)">
                 <button onclick="sendMessage()" id="send-btn" class="btn btn-primary">
                     <span id="send-icon">Send</span>
                     <span id="loading-icon" style="display: none;">
-                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                        Processing...
+                        <span class="spinner-border spinner-border-sm"></span>
                     </span>
                 </button>
             </div>
@@ -28,127 +24,109 @@
     </div>
 </div>
 
+<!-- Add markdown library -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
 <style>
+/* Existing styles */
 .chat-message {
     margin-bottom: 15px;
-    padding: 10px 15px;
-    border-radius: 15px;
-    max-width: 80%;
+    padding: 12px 15px;
+    border-radius: 12px;
+    max-width: 85%;
 }
 
-.user-message {
-    background-color: #e3f2fd;
-    margin-left: auto;
-    border-top-right-radius: 5px;
-}
-
-.bot-message {
-    background-color: #f5f5f5;
-    margin-right: auto;
-    border-top-left-radius: 5px;
-}
-
-#chat-messages::-webkit-scrollbar {
-    width: 5px;
-}
-
-#chat-messages::-webkit-scrollbar-track {
-    background: #f1f1f1;
-}
-
-#chat-messages::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 5px;
-}
-
-.typing-indicator {
-    background-color: #e6e6e6;
-    padding: 8px 16px;
-    border-radius: 15px;
-    display: inline-block;
-    margin-bottom: 15px;
-}
-
-.typing-animation {
-    display: inline-block;
-    animation: blink 1s infinite;
-}
-
-@keyframes blink {
-    50% { opacity: 0; }
-}
-
+/* Add markdown styling */
 .bot-message {
     background-color: #f8f9fa;
     border-left: 4px solid #0d6efd;
     margin-right: auto;
-    border-top-left-radius: 5px;
-    max-width: 80%;
-    line-height: 1.5;
+    font-size: 1rem;
+    line-height: 1.6;
 }
 
-.user-message {
-    background-color: #e3f2fd;
-    border-right: 4px solid #0d6efd;
-    margin-left: auto;
-    border-top-right-radius: 5px;
-    max-width: 80%;
+.bot-message h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+.bot-message h2 { font-size: 1.3rem; margin-bottom: 0.8rem; }
+.bot-message h3 { font-size: 1.1rem; margin-bottom: 0.6rem; }
+
+.bot-message ul, .bot-message ol {
+    margin: 0.8rem 0;
+    padding-left: 1.5rem;
 }
 
-.bot-thinking {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: #f0f2f5;
-    padding: 12px 16px;
-    border-radius: 15px;
-    width: fit-content;
-    margin-bottom: 15px;
+.bot-message li {
+    margin-bottom: 0.4rem;
 }
 
-.dot-pulse {
-    position: relative;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background-color: #0d6efd;
-    animation: pulse 1.5s infinite;
+.bot-message code {
+    background: #f0f0f0;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    font-family: monospace;
 }
 
-.dot-pulse:nth-child(2) {
-    animation-delay: 0.2s;
+.bot-message pre {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 5px;
+    overflow-x: auto;
 }
 
-.dot-pulse:nth-child(3) {
-    animation-delay: 0.4s;
+.bot-message blockquote {
+    border-left: 3px solid #0d6efd;
+    margin: 1rem 0;
+    padding-left: 1rem;
+    color: #666;
 }
 
-@keyframes pulse {
-    0% {
-        transform: scale(0.8);
-        opacity: 0.5;
-    }
-    50% {
-        transform: scale(1.2);
-        opacity: 1;
-    }
-    100% {
-        transform: scale(0.8);
-        opacity: 0.5;
-    }
+.bot-message table {
+    border-collapse: collapse;
+    margin: 1rem 0;
+    width: 100%;
 }
 
-.message-enter {
-    opacity: 0;
-    transform: translateY(20px);
-    animation: slideIn 0.3s ease forwards;
+.bot-message th, .bot-message td {
+    border: 1px solid #dee2e6;
+    padding: 0.5rem;
 }
 
-@keyframes slideIn {
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.bot-message th {
+    background: #f8f9fa;
+}
+
+.reference-list {
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.reference-item {
+    background: #e9ecef;
+    padding: 4px 12px;
+    border-radius: 12px;
+    margin-right: 8px;
+    margin-bottom: 4px;
+    display: inline-block;
+    transition: all 0.2s ease;
+}
+
+.reference-link {
+    color: #0d6efd;
+    text-decoration: none;
+}
+
+.reference-link:hover {
+    text-decoration: none;
+    opacity: 0.8;
+}
+
+.reference-item:hover {
+    background: #dee2e6;
+}
+
+.source-icon {
+    margin-right: 4px;
+    opacity: 0.7;
 }
 </style>
 
@@ -160,11 +138,47 @@ function handleKeyPress(event) {
 }
 
 // Update the addMessage function to include animation
-function addMessage(content, isUser) {
+function addMessage(content, isUser, references = []) {
     const messages = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ${isUser ? 'user-message' : 'bot-message'} message-enter`;
-    messageDiv.innerHTML = content;
+    
+    if (!isUser) {
+        // Parse markdown content
+        const prefix = '<strong>Bot:</strong>';
+        const messageContent = content.replace(prefix, '');
+        const parsedContent = marked.parse(messageContent);
+        
+        // Create content div
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'markdown-content';
+        contentDiv.innerHTML = `${prefix} ${parsedContent}`;
+        messageDiv.appendChild(contentDiv);
+        
+        // Add references if available
+        if (references && references.length > 0) {
+            const refsDiv = document.createElement('div');
+            refsDiv.className = 'reference-list';
+            refsDiv.innerHTML = `
+                <small>Sources:</small><br>
+                ${references.map(ref => `
+                    <a href="${ref.url}" 
+                       class="reference-link" 
+                       target="_blank" 
+                       rel="noopener noreferrer">
+                        <span class="reference-item">
+                            <span class="source-icon">📄</span>
+                            ${ref.source} ${ref.page ? `(p.${ref.page})` : ''}
+                        </span>
+                    </a>
+                `).join('')}
+            `;
+            messageDiv.appendChild(refsDiv);
+        }
+    } else {
+        messageDiv.innerHTML = content;
+    }
+    
     messages.appendChild(messageDiv);
     messages.scrollTop = messages.scrollHeight;
 }
@@ -219,15 +233,17 @@ function sendMessage() {
     fetch('/chat/', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Type': 'application/json',
             'X-CSRFToken': '{{ csrf_token }}'
         },
-        body: `question=${encodeURIComponent(question)}`
+        body: JSON.stringify({
+            question: question
+        })
     })
     .then(response => response.json())
     .then(data => {
         removeTypingIndicator();
-        addMessage(`<strong>Bot:</strong> ${data.response}`, false);
+        addMessage(`<strong>Bot:</strong> ${data.response}`, false, data.references);
         questionInput.value = '';
     })
     .catch(error => {
@@ -239,9 +255,18 @@ function sendMessage() {
     });
 }
 
-// Add initial greeting
+// Update the initial greeting to use markdown
 document.addEventListener('DOMContentLoaded', function() {
-    addMessage("<strong>Bot:</strong> Hello! I'm here to help answer your questions about breast cancer. How can I assist you today?", false);
+    addMessage(`<strong>Bot:</strong> # Welcome to Medical Assistant
+
+I can help you with:
+* Understanding breast cancer symptoms and signs
+* Early detection and screening information
+* Risk factors and prevention strategies
+* Treatment options and procedures
+* Support resources and guidance
+
+Feel free to ask any questions about breast cancer.`, false);
 });
 </script>
 {% endblock %}

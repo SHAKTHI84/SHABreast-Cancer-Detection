@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3>Breast Cancer Risk Assessment</h3>
+                </div>
+                <div class="card-body">
+                    <div class="conversation-container" style="height: 400px; overflow-y: auto;">
+                        <div id="conversation-history"></div>
+                    </div>
+                    
+                    <!-- Answer Interface -->
+                    <div id="answer-interface" class="mt-4">
+                        <div id="current-question" class="mb-3"></div>
+                        <div id="answer-options" class="mb-3"></div>
+                        
+                        <!-- Custom input when needed -->
+                        <div id="custom-input" style="display: none;">
+                            <input type="number" class="form-control mb-3" id="number-input">
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <button class="btn btn-secondary" id="back-btn" style="display: none;">
+                                <i class="fas fa-arrow-left"></i> Previous
+                            </button>
+                            <button class="btn btn-primary" id="next-btn">
+                                Continue <i class="fas fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.conversation-bubble {
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 10px;
+    max-width: 80%;
+}
+
+.assistant-bubble {
+    background-color: #f8f9fa;
+    border-left: 4px solid #0d6efd;
+    margin-right: auto;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.assistant-bubble em {
+    display: block;
+    margin-top: 0.5rem;
+    color: #6c757d;
+    font-style: italic;
+}
+
+.user-bubble {
+    background-color: #e3f2fd;
+    border-right: 4px solid #0d6efd;
+    margin-left: auto;
+    text-align: right;
+}
+
+.option-btn {
+    min-width: 120px;
+    transition: all 0.2s;
+    margin: 0.25rem;
+}
+
+.option-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.option-btn.selected {
+    background-color: #0d6efd;
+    color: white;
+}
+
+.conversation-container {
+    padding: 1rem;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+}
+
+.message-enter {
+    opacity: 0;
+    transform: translateY(20px);
+    animation: slideIn 0.3s ease-out forwards;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Add some additional styles for markdown */
+.assistant-bubble h1 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.assistant-bubble h2 {
+    font-size: 1.3rem;
+    margin-bottom: 0.8rem;
+}
+
+.assistant-bubble p {
+    margin-bottom: 0.5rem;
+}
+
+.assistant-bubble ul, .assistant-bubble ol {
+    margin-left: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Improve option buttons layout */
+#answer-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.option-btn {
+    min-width: 100px;
+}
+
+/* Add these styles */
+.gap-2 {
+    gap: 0.5rem !important;
+}
+
+.option-btn {
+    min-width: 120px;
+    transition: all 0.2s;
+}
+
+.option-btn:hover {
+    transform: translateY(-2px);
+}
+
+.option-btn.selected {
+    background-color: #0d6efd;
+    color: white;
+    border-color: #0d6efd;
+}
+
+.input-group {
+    max-width: 500px;
+    margin: 0 auto;
+}
+</style>
+
+<!-- Add marked.js for markdown support -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<script>
+let conversationHistory = [];
+let currentAnswer = null;
+let currentQuestion = null;
+
+function displayQuestion(data) {
+    currentQuestion = data;
+    const questionDiv = document.getElementById('current-question');
+    const optionsDiv = document.getElementById('answer-options');
+    const nextBtn = document.getElementById('next-btn');
+    
+    // Parse markdown in the question and context
+    const questionText = data.message + (data.context ? `\n\n*${data.context}*` : '');
+    questionDiv.innerHTML = marked.parse(questionText);
+    questionDiv.dataset.field = data.field;
+    
+    optionsDiv.innerHTML = '';
+    currentAnswer = null;
+    nextBtn.disabled = true;
+    
+    if (data.type === 'choice' && data.options) {
+        // Create option buttons
+        const buttonGroup = document.createElement('div');
+        buttonGroup.className = 'd-flex flex-wrap gap-2 justify-content-center';
+        
+        data.options.forEach(option => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-outline-primary option-btn';
+            btn.textContent = option;
+            btn.onclick = () => {
+                selectOption(option, btn);
+                nextBtn.disabled = false;
+            };
+            buttonGroup.appendChild(btn);
+        });
+        
+        optionsDiv.appendChild(buttonGroup);
+    } else {
+        // Create text input
+        const inputGroup = document.createElement('div');
+        inputGroup.className = 'input-group mb-3';
+        
+        const textInput = document.createElement('input');
+        textInput.type = 'text';
+        textInput.className = 'form-control';
+        textInput.placeholder = 'Type your answer here...';
+        if (data.required) {
+            textInput.setAttribute('required', 'required');
+        }
+        
+        textInput.addEventListener('input', function() {
+            currentAnswer = this.value.trim();
+            nextBtn.disabled = !currentAnswer;
+        });
+        
+        textInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && this.value.trim()) {
+                submitAnswer();
+            }
+        });
+        
+        inputGroup.appendChild(textInput);
+        optionsDiv.appendChild(inputGroup);
+        
+        // Focus on text input
+        setTimeout(() => textInput.focus(), 100);
+    }
+    
+    // Add to conversation history
+    addToConversation(questionText, false);
+}
+
+function submitAnswer() {
+    if (!currentAnswer || !currentQuestion) return;
+    
+    addToConversation(currentAnswer, true);
+    
+    fetch('/risk-assessment/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({
+            field: currentQuestion.field,
+            answer: currentAnswer,
+            metadata: currentQuestion.metadata || {}
+        })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Network response was not ok');
+        return response.json();
+    })
+    .then(data => {
+        if (data.completed) {
+            window.location.href = data.redirect_url;
+        } else {
+            displayQuestion(data);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        addToConversation('Sorry, there was an error. Please try again.', false);
+    });
+    
+    currentAnswer = null;
+    document.getElementById('next-btn').disabled = true;
+}
+
+function addToConversation(message, isUser = false) {
+    const container = document.getElementById('conversation-history');
+    const bubble = document.createElement('div');
+    bubble.className = `conversation-bubble ${isUser ? 'user-bubble' : 'assistant-bubble'} message-enter`;
+    
+    // Parse markdown if it's an assistant message
+    if (!isUser) {
+        bubble.innerHTML = marked.parse(message);
+    } else {
+        bubble.textContent = message;
+    }
+    
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+    
+    conversationHistory.push({
+        role: isUser ? 'user' : 'assistant',
+        content: message
+    });
+}
+
+function selectOption(option, btn) {
+    document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    currentAnswer = option;
+}
+
+// Add input event listeners for text/number inputs
+document.addEventListener('input', function(e) {
+    if (e.target.matches('#custom-input input') || e.target.matches('#answer-options input')) {
+        currentAnswer = e.target.value;
+        document.getElementById('next-btn').disabled = !currentAnswer;
+    }
+});
+
+// Initialize assessment
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/risk-assessment/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ start: true })
+    })
+    .then(response => response.json())
+    .then(data => displayQuestion(data))
+    .catch(error => {
+        console.error('Error:', error);
+        addToConversation('Sorry, there was an error starting the assessment. Please refresh the page.', false);
+    });
+    
+    document.getElementById('next-btn').onclick = submitAnswer;
+});
+</script>
+{% endblock %}
