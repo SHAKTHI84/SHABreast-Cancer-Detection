@@ -42,9 +42,7 @@ An intelligent healthcare platform that combines computer vision, natural langua
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/A-Akhil/medisight.git
-cd medisight
-```
+
 
 2. Create and activate virtual environment:
 ```bash

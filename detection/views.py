@@ -15,15 +15,18 @@ import logging
 import os
 from pathlib import Path
 import numpy as np
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.memory import ConversationBufferMemory
-from langchain.memory.chat_message_histories import RedisChatMessageHistory
+from langchain_community.chat_message_histories import RedisChatMessageHistory
 from langchain_core.memory import BaseMemory
 from typing import Dict, Any, List
 from datetime import datetime
 from django.core.exceptions import ValidationError
 import traceback
+import torch
+from torchvision import transforms
+from PIL import Image
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -32,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Configure Ollama
 llm = ChatOllama(
     model="llama3.2-vision",
-    base_url="https://9gwg2slc-11434.inc1.devtunnels.ms/",
+    base_url="127.0.0.1:11434",
     temperature=0.1
 )
 
@@ -57,6 +60,19 @@ QUESTION_WEIGHTS = {
     'alcohol_consumption': 1,
     'weight_status': 1
 }
+
+# Load the EfficientNet-B7 model (ensure the model file is in the correct path)
+MODEL_PATH = os.path.join(settings.BASE_DIR, 'models', 'efficientnet_b7.pth')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = torch.load(MODEL_PATH, map_location=device)
+model.eval()
+
+# Define image preprocessing
+preprocess = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
 
 def upload_report(request):
     if request.method == 'POST':
@@ -265,73 +281,28 @@ def extract_json_from_text(text):
 
 def analyze_image(image_path):
     try:
-        # Read and encode image
-        with open(image_path, 'rb') as img:
-            image_data = base64.b64encode(img.read()).decode('utf-8')
-        
-        # Step 1: Simple text extraction
-        text_extraction_parts = [
-            {
-                "type": "image_url",
-                "image_url": f"data:image/jpeg;base64,{image_data}"
-            },
-            {
-                "type": "text",
-                "text": "Extract all text from this image."
-            }
-        ]
-        
-        message = HumanMessage(content=text_extraction_parts)
-        raw_text = llm.invoke([message])
-        logger.debug(f"Raw extracted text: {raw_text}")
-        
-        # Step 2: Analysis with JSON output request
-        analysis_parts = [
-            {
-                "type": "text",
-                "text": f"""Based on this medical report text:
-                {raw_text.content}
-                
-                Analyze the severity and provide a response in this exact JSON format, where:
-                - probability should be a number between 0-100 indicating cancer likelihood
-                - findings should list all key medical observations
-                - recommendations should list suggested actions
+        # Load and preprocess the image
+        image = Image.open(image_path).convert('RGB')
+        input_tensor = preprocess(image).unsqueeze(0).to(device)
 
-                Return ONLY the JSON:
-                {{
-                    "probability": "85",
-                    "findings": [
-                        "finding 1",
-                        "finding 2"
-                    ],
-                    "recommendations": [
-                        "recommendation 1",
-                        "recommendation 2"
-                    ]
-                }}"""
-            }
-        ]
-        
-        message = HumanMessage(content=analysis_parts)
-        analysis = llm.invoke([message])
-        logger.debug(f"Analysis response: {analysis}")
-        
-        json_data = extract_json_from_text(analysis)
-        
-        if json_data:
-            probability = json_data.get('probability')
-            if probability is None:
-                probability = "50"
-                
-            return {
-                'probability': int(probability) / 100,
-                'findings': '\n'.join(json_data.get('findings', [])),
-                'guidance': '\n'.join(json_data.get('recommendations', []))
-            }
-        else:
-            logger.error("Failed to extract JSON from response")
-            raise ValueError("Could not extract JSON from response")
-            
+        # Perform inference
+        with torch.no_grad():
+            outputs = model(input_tensor)
+            probabilities = torch.nn.functional.softmax(outputs[0], dim=0)
+
+        # Get the predicted class and probability
+        predicted_class = probabilities.argmax().item()
+        confidence = probabilities[predicted_class].item()
+
+        # Map the predicted class to findings and guidance
+        findings = "Detected abnormality" if predicted_class == 1 else "No abnormality detected"
+        guidance = "Consult a specialist for further evaluation" if predicted_class == 1 else "No further action required"
+
+        return {
+            'probability': confidence,
+            'findings': findings,
+            'guidance': guidance
+        }
     except Exception as e:
         logger.error(f"Error in analyze_image: {str(e)}")
         return {

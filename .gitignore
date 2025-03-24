@@ -3,3 +3,11 @@ test_img/*
 venv/*
 knowledge/*
 conversations/*
+*.pyc
+__pycache__/
+*.log
+*.sqlite3
+.env
+.venv/
+models/
+node_modules/
