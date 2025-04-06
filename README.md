@@ -119,25 +119,11 @@ medisight/
 - Secure the Ollama endpoint
 - Handle medical data according to HIPAA guidelines
 
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
-
 ## 💪 Thanks to all Wonderful Contributors
 
-Thanks a lot for spending your time helping this medisight grow.
-Thanks a lot! Keep rocking 🍻
+Thanks a lot for spending your time helping MediSight grow. 
+Keep rocking 🍻
 
-<div align="center">
-
-## License
+## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
